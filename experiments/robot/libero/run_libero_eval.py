@@ -144,6 +144,9 @@ class GenerateConfig:
     # JSON results logging
     json_log_file: str = ""           # Path to save JSON results (empty = disabled)
 
+    # Rollout videos (I/O only; does not affect the policy or metrics). ~1 MB per episode.
+    save_videos: bool = True          # If False, skip writing per-episode MP4s under ./rollouts/
+
 
 
 def validate_config(cfg: GenerateConfig) -> None:
@@ -488,11 +491,16 @@ def run_task(
         task_episode_stats.append({
             "episode": episode_idx,
             "success": success,
-            "num_predictions": len(episode_iters),
+            # Number of policy (VLM) calls. replay_stats has one entry per call in every mode;
+            # episode_iters is only populated when the head reports an iteration count (adaptive modes).
+            "num_predictions": len(replay_stats),
             "avg_iters": float(np.mean(episode_iters)) if episode_iters else None,
+            "exec_horizons": [int(n) for _, n in replay_stats],
         })
 
-        if replay_stats:
+        if not cfg.save_videos:
+            pass
+        elif replay_stats:
             save_rollout_video_with_stats(
                 replay_images, replay_stats, total_episodes, success=success,
                 task_description=task_description, log_file=log_file, save_version=save_version,

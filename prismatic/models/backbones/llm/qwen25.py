@@ -45,7 +45,7 @@ class Qwen25LLMBackbone(HFCausalLLMBackbone):
         llm_max_length: int = 2048,
         hf_token: Optional[str] = None,
         inference_mode: bool = False,
-        use_flash_attention_2: bool = True,
+        use_flash_attention_2: bool = False,  # flash-attn has no sm_120 (Blackwell) wheels; SDPA path instead
         num_extra_tokens: int = 0,
     ) -> None:
         super().__init__(

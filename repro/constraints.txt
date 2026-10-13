@@ -1,0 +1,10 @@
+# pip constraints used for every install into the rdvla env on TARS.
+# Prevents the repo's unpinned "torch" dependency from swapping the cu128 build.
+torch==2.7.1
+torchvision==0.22.1
+torchaudio==2.7.1
+numpy==1.26.4
+# Added during Phase A on TARS (see repro/LOG.md):
+protobuf==4.25.9              # TF 2.15 needs <5; tensorflow-metadata>=1.16 needs >=5
+tensorflow-metadata<1.16
+mujoco==3.1.6                 # mujoco 3.15 breaks robosuite 1.4.1 (mjtJoint assertion)

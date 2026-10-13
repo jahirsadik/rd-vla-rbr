@@ -143,8 +143,22 @@ archived/
 
 pretrained_models/*
 *.pt
+*.pth
+*.ckpt
+*.safetensors
+*.mp4
 
 beaker/
 scripts.sh
 
 *.pyc
+
+# =============================================================================
+# Reproduction (repro/): only scripts, pins and the patch are tracked.
+# Results, tables, gate files and run logs stay local.
+# =============================================================================
+repro/LOG.md
+repro/results/
+repro/results_tables.md
+repro/GATE_spatial.txt
+repro/logs/

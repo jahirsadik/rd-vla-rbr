@@ -553,6 +553,19 @@ def finetune(cfg):
                     smoothened = {k: sum(v) / len(v) for k, v in recent_metrics.items() if v}
                     wandb.log({f"VLA Train/{k}": v for k, v in smoothened.items()}, step=log_step)
 
+                # Logging only: mirror the smoothed metrics to stdout every 100 optimizer steps
+                # (once per step, on the last micro-batch), so runs without wandb keep a loss curve.
+                if (
+                    distributed_state.is_main_process
+                    and (batch_idx + 1) % cfg.grad_accumulation_steps == 0
+                    and log_step % 100 == 0
+                ):
+                    smoothened = {k: sum(v) / len(v) for k, v in recent_metrics.items() if v}
+                    print(
+                        f"[train step {log_step}] " + ", ".join(f"{k}={v:.6f}" for k, v in smoothened.items()),
+                        flush=True,
+                    )
+
                 if cfg.lr_warmup_steps > 0:
                     lr_progress = min((gradient_step_idx + 1) / cfg.lr_warmup_steps, 1.0)
                     current_lr = original_lr * (0.1 + 0.9 * lr_progress)
