@@ -57,8 +57,8 @@ build_jobs() {
 foreign_evals() {
   local p
   for p in $(pgrep -f 'repro/scripts/eval_task\.sh '); do
-    [[ "$(tr '\0' ' ' < "/proc/$p/cmdline" 2>/dev/null)" == bash\ *repro/scripts/eval_task.sh\ * ]] || continue
-    tr '\0' '\n' < "/proc/$p/environ" 2>/dev/null | grep -q '^RDVLA_POOL=' && continue
+    [[ "$( { tr '\0' ' ' < "/proc/$p/cmdline"; } 2>/dev/null)" == bash\ *repro/scripts/eval_task.sh\ * ]] || continue
+    tr '\0' '\n' 2>/dev/null < "/proc/$p/environ" | grep -q '^RDVLA_POOL=' && continue
     echo "$p"
   done
 }
@@ -66,7 +66,7 @@ foreign_evals() {
 foreign_on_gpu() {
   local g=$1 n=0 p
   for p in $(foreign_evals); do
-    tr '\0' '\n' < "/proc/$p/environ" 2>/dev/null | grep -qx "CUDA_VISIBLE_DEVICES=$g" && n=$((n+1))
+    tr '\0' '\n' 2>/dev/null < "/proc/$p/environ" | grep -qx "CUDA_VISIBLE_DEVICES=$g" && n=$((n+1))
   done
   echo "$n"
 }
