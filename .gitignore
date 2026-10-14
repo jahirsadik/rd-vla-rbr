@@ -158,6 +158,7 @@ scripts.sh
 # Results, tables, gate files and run logs stay local.
 # =============================================================================
 repro/LOG.md
+repro/RESULTS.md
 repro/results/
 repro/results_tables.md
 repro/GATE_spatial.txt
