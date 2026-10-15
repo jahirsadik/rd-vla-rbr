@@ -98,6 +98,57 @@ def vlm_features(pol: Policy, obs: Dict, task_label: str) -> Features:
     return Features(h_a, h_t, p, cap.layers)
 
 
+@torch.inference_mode()
+def vlm_features_batch(pol: Policy, obs_list: List[Dict], task_label: str) -> Features:
+    """Batched version of `vlm_features` for frames that share one instruction (hence one prompt length).
+    Replicates OpenVLAForActionPrediction.predict_action up to the head; the released code only reshapes
+    for batch 1 there. Inputs are prepared exactly as in get_vla_action. Returns tensors that can be used
+    outside inference mode (cloned)."""
+    import experiments.robot.openvla_utils as OU
+    from prismatic.extern.hf import modeling_prismatic as MP
+
+    cfg, vla = pol.cfg, pol.model
+    prompt = ("<|im_start|>system\nYou are Qwen, created by Alibaba Cloud. You are a helpful assistant.<|im_end|>\n"
+              f"<|im_start|>user\nWhat action should the robot take to {task_label.lower()}?<|im_end|>\n"
+              "<|im_start|>assistant\n")
+    pix, props = [], []
+    for obs in obs_list:
+        imgs = OU.prepare_images_for_vla([obs["full_image"], obs["wrist_image"]], cfg)
+        a = pol.processor(prompt, imgs[0])
+        b = pol.processor(prompt, imgs[1])
+        pix.append(torch.cat([a["pixel_values"], b["pixel_values"]], dim=1))
+        props.append(OU.normalize_proprio(obs["state"].copy(), vla.norm_stats[cfg.unnorm_key]["proprio"]))
+    B = len(obs_list)
+    dev = vla.device
+    input_ids = a["input_ids"].repeat(B, 1).to(dev)
+    attention_mask = a["attention_mask"].repeat(B, 1).to(dev)
+    pixel_values = torch.cat(pix).to(dev, dtype=torch.bfloat16)
+
+    labels = input_ids.clone()
+    labels[:] = MP.IGNORE_INDEX
+    n_prompt = input_ids.shape[-1] - 1
+    input_ids, attention_mask = vla._prepare_input_for_action_prediction(input_ids, attention_mask)
+    labels = vla._prepare_labels_for_action_prediction(labels, input_ids)
+    emb = vla.get_input_embeddings()(input_ids)
+    act_mask = vla._process_action_masks(labels)
+    lang = emb[~act_mask].reshape(B, -1, emb.shape[2])
+    patches = vla._process_vision_features(pixel_values, lang, False)
+    n_patches = vla.vision_backbone.get_num_patches() * vla.vision_backbone.get_num_images_in_input()
+    q = vla.action_queries.weight.view(1, *vla.action_queries.weight.shape).repeat(B, 1, 1)
+    emb = vla._replace_input_embeddings(emb.clone(), act_mask, q)
+    mm_emb, mm_mask = vla._build_multimodal_attention(emb, patches, attention_mask)
+    out = vla.language_model(input_ids=None, attention_mask=mm_mask, position_ids=None, past_key_values=None,
+                             inputs_embeds=mm_emb, labels=None, use_cache=None, output_attentions=False,
+                             output_hidden_states=True, return_dict=True)
+    layers = head_layers(pol.m)
+    lo = n_patches + n_prompt
+    h_a = torch.stack([out.hidden_states[l][:, lo:lo + MP.NUM_TOKENS] for l in layers], 1).to(torch.bfloat16)
+    h_t = torch.stack([out.hidden_states[l][:, :n_patches] for l in layers], 1).to(torch.bfloat16)
+    proprio = torch.tensor(np.stack(props), device=dev, dtype=torch.bfloat16)
+    p = pol.proprio_projector(proprio).unsqueeze(1)
+    return Features(h_a.clone(), h_t.clone(), p.clone(), layers)
+
+
 # ----------------------------------------------------------------------------------------------------------------
 # Loop runner with exact K/V caching
 # ----------------------------------------------------------------------------------------------------------------
