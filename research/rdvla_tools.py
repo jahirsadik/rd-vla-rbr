@@ -248,7 +248,7 @@ class LoopRunner:
 
     @torch.no_grad()
     def anderson(self, f: Features, budget: int, m_hist: int = 3, beta: float = 1.0, lam: float = 1e-4,
-                 state0=None, return_residuals: bool = False):
+                 state0=None, return_residuals: bool = False, project: bool = True, safeguard: bool = True):
         """Safeguarded Anderson acceleration of the loop, `budget` loop evaluations in total.
 
         Iterate S_{k+1} = sum_j a_j [(1-beta) S_j + beta g(S_j)] over the last m_hist pairs, with a minimizing
@@ -267,7 +267,7 @@ class LoopRunner:
             r = g_flat - x_flat
             rn = r.norm(dim=1)
             res_log.append(rn / x_flat.norm(dim=1).clamp_min(1e-12))
-            if prev_rn is not None:
+            if safeguard and prev_rn is not None:
                 bad = rn > prev_rn  # residual increased: drop the history for those samples
                 if bad.any():
                     for H in (Xs, Gs, Rs):
@@ -290,7 +290,8 @@ class LoopRunner:
             alpha = alpha / alpha.sum(dim=1, keepdim=True).clamp_min(1e-12)
             Xm, Gm = torch.nan_to_num(torch.stack(Xs, 2)), torch.nan_to_num(torch.stack(Gs, 2))
             mix = ((1 - beta) * Xm + beta * Gm) @ alpha  # [B, N, 1]
-            s = self._project(mix.squeeze(-1).view_as(s).to(s.dtype))
+            mixed = mix.squeeze(-1).view_as(s).to(s.dtype)
+            s = self._project(mixed) if project else mixed
         out = self.decode(s, ctx)
         return (out, torch.stack(res_log, 1)) if return_residuals else out
 
