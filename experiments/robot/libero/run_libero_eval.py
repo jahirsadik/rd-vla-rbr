@@ -496,6 +496,8 @@ def run_task(
             "num_predictions": len(replay_stats),
             "avg_iters": float(np.mean(episode_iters)) if episode_iters else None,
             "exec_horizons": [int(n) for _, n in replay_stats],
+            "iters_per_call": [int(i) for i, _ in replay_stats],  # loops run by the head on each call (0 if not reported)
+            "num_steps": len(replay_images),  # control steps executed (excludes the initial wait steps)
         })
 
         if not cfg.save_videos:
