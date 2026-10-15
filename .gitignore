@@ -163,3 +163,5 @@ repro/results/
 repro/results_tables.md
 repro/GATE_spatial.txt
 repro/logs/
+# research outputs (arrays, caches, logs) stay local
+research/out/
