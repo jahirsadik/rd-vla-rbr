@@ -42,6 +42,7 @@ ap.add_argument("--batch", type=int, default=64)
 ap.add_argument("--anderson", action="store_true", help="also record Anderson vs Picard at budgets 1..12")
 ap.add_argument("--out", default="research/out/probe")
 ap.add_argument("--max_tasks", type=int, default=10)
+ap.add_argument("--keep_states", action="store_true", help="also save S_k (k=0..K) for the first S_0 draw, fp16")
 args = ap.parse_args()
 assert len(args.ckpt) == len(args.name)
 os.makedirs(args.out, exist_ok=True)
@@ -87,11 +88,14 @@ for ckpt, name in zip(args.ckpt, args.name):
     A = np.zeros((N, S, K + 1, 8, 7), np.float32)
     dS = np.zeros((N, S, K), np.float32)
     rho = np.zeros((N, S, K), np.float32)
+    states = np.zeros((N, K + 1, 8, pol.m.cfg.hidden_dim), np.float16) if args.keep_states else None
     for s in range(S):
         gen = torch.Generator(device="cuda").manual_seed(1000 + s)
         for i in range(0, N, args.batch):
             f = Features.cat(feats[i:i + args.batch])
-            tr = runner.trajectory(f, K, generator=gen)
+            tr = runner.trajectory(f, K, generator=gen, keep_states=args.keep_states and s == 0)
+            if args.keep_states and s == 0:
+                states[i:i + args.batch] = tr["states"].cpu().numpy().astype(np.float16)
             A[i:i + args.batch, s] = tr["actions"].cpu().numpy()
             dS[i:i + args.batch, s] = tr["dS"].cpu().numpy()
             rho[i:i + args.batch, s] = tr["rho"].cpu().numpy()
@@ -140,5 +144,7 @@ for ckpt, name in zip(args.ckpt, args.name):
           f"{[summary['err_k'][k] for k in (1, 4, 12, 32)]} rho_1={summary['rho_k'][1]:.3f} "
           f"seed_std(1,32)={summary['seed_std_k'][1]:.4f},{summary['seed_std_k'][32]:.4f} "
           f"({time.time() - t1:.0f}s)", flush=True)
+    if args.keep_states:
+        np.save(os.path.join(args.out, f"{name}_states_seed0.npy"), states)
     del pol, feats
     torch.cuda.empty_cache()
