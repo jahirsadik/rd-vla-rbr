@@ -52,20 +52,26 @@ def update_auto_map(pretrained_checkpoint: str) -> None:
         print(f"Warning: No config.json found at {config_path}")
         return
 
+    auto_map = {
+        "AutoConfig": "configuration_prismatic.OpenVLAConfig",
+        "AutoModelForVision2Seq": "modeling_prismatic.OpenVLAForActionPrediction",
+    }
+    with open(config_path, "r") as f:
+        config = json.load(f)
+    # Already set (every load after the first): do not rewrite. Many eval processes load the same checkpoint at
+    # once, and a reader could otherwise see a half-written config.json (JSONDecodeError at startup).
+    if config.get("auto_map") == auto_map:
+        return
+
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     backup_path = os.path.join(pretrained_checkpoint, f"config.json.back.{timestamp}")
     shutil.copy2(config_path, backup_path)
 
-    with open(config_path, "r") as f:
-        config = json.load(f)
-
-    config["auto_map"] = {
-        "AutoConfig": "configuration_prismatic.OpenVLAConfig",
-        "AutoModelForVision2Seq": "modeling_prismatic.OpenVLAForActionPrediction",
-    }
-
-    with open(config_path, "w") as f:
+    config["auto_map"] = auto_map
+    tmp_path = f"{config_path}.tmp.{os.getpid()}"
+    with open(tmp_path, "w") as f:
         json.dump(config, f, indent=2)
+    os.replace(tmp_path, config_path)  # atomic: readers see the old or the new file, never a partial one
 
 
 def check_identical_files(path1: Union[str, Path], path2: Union[str, Path]) -> bool:
