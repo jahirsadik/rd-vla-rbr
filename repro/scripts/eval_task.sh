@@ -26,7 +26,7 @@ if [[ ! -f "$OUT/run_info.txt" ]]; then
     echo "gpu: ${CUDA_VISIBLE_DEVICES}"; echo "git: $(git rev-parse --short HEAD)"; echo "extra_flags: $*"; } > "$OUT/run_info.txt"
 fi
 t0=$(date +%s)
-python experiments/robot/libero/run_libero_eval.py \
+python "${EVAL_SCRIPT:-experiments/robot/libero/run_libero_eval.py}" \
   --pretrained_checkpoint "$CKPT" \
   --task_suite_name "$SUITE" --task_id "$TID" \
   --num_trials_per_task "$TRIALS" --seed "$SEED" \

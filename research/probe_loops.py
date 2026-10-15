@@ -27,7 +27,7 @@ import numpy as np
 import torch
 
 from research.rdvla_tools import (Features, LoopRunner, eval_obs, iter_rlds_episodes, load_policy,
-                                  normalized_chunk_labels, vlm_features)
+                                  normalized_chunk_labels, vlm_features_batch)
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--ckpt", action="append", required=True)
@@ -41,6 +41,7 @@ ap.add_argument("--seeds", type=int, default=4)
 ap.add_argument("--batch", type=int, default=64)
 ap.add_argument("--anderson", action="store_true", help="also record Anderson vs Picard at budgets 1..12")
 ap.add_argument("--out", default="research/out/probe")
+ap.add_argument("--max_tasks", type=int, default=10)
 args = ap.parse_args()
 assert len(args.ckpt) == len(args.name)
 os.makedirs(args.out, exist_ok=True)
@@ -54,7 +55,7 @@ for ei, ep in iter_rlds_episodes(args.dataset):
     task = ep["instruction"]
     n_tasks_seen.add(task)
     if per_task[task] >= args.eps_per_task:
-        if len(n_tasks_seen) >= 10 and all(per_task[k] >= args.eps_per_task for k in n_tasks_seen):
+        if len(n_tasks_seen) >= args.max_tasks and all(per_task[k] >= args.eps_per_task for k in n_tasks_seen):
             break
         continue
     per_task[task] += 1
@@ -70,7 +71,16 @@ for ckpt, name in zip(args.ckpt, args.name):
     pol = load_policy(ckpt, suite=args.suite)
     stats = pol.model.norm_stats[pol.cfg.unnorm_key]["action"]
     labels = np.stack([normalized_chunk_labels(a, t, stats) for (_, t, _, _, a) in frames])  # [N, 8, 7]
-    feats = [vlm_features(pol, obs, task) for (_, _, obs, task, _) in frames]
+    # batched VLM pass per demo (frames of one demo share the prompt); numerics are batch-16-like (bf16), see
+    # research/check_batch_features.py. Features are kept per frame, in frame order.
+    feats = [None] * len(frames)
+    by_ep = defaultdict(list)
+    for j, fr in enumerate(frames):
+        by_ep[fr[0]].append(j)
+    for ep_idx, js in by_ep.items():
+        fb = vlm_features_batch(pol, [frames[j][2] for j in js], frames[js[0]][3])
+        for q, j in enumerate(js):
+            feats[j] = Features(fb.h_a[q:q + 1], fb.h_t[q:q + 1], fb.p[q:q + 1], fb.layers)
     print(f"[probe] {name}: features in {time.time() - t1:.0f}s", flush=True)
     runner = LoopRunner(pol.m)
     N, K, S = len(frames), args.K, args.seeds
