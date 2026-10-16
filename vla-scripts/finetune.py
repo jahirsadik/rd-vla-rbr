@@ -451,6 +451,14 @@ def finetune(cfg):
     total_params = sum(p.numel() for p in vla_params + action_head_params + proprio_params)
     print(f"# total trainable params: {total_params}")
 
+    # fp32 master weights for the action head: the bf16 head still runs forward/backward, AdamW updates fp32
+    # copies, and the copies are rounded back into the head after every optimizer step.
+    head_master_params = None
+    if getattr(cfg, "head_fp32_master", False):
+        assert not cfg.use_muon, "head_fp32_master is only implemented for AdamW"
+        head_master_params = [p.detach().float().clone() for p in action_head_params]
+        print(f"Action head: fp32 master weights for {len(head_master_params)} tensors")
+
     if cfg.use_muon:
         print("Using MUON optimizer for action head")
         action_head_muon_params = [p for p in action_head_params if p.ndim == 2]
@@ -466,7 +474,8 @@ def finetune(cfg):
         ])
         optimizers = [optimizer, muon_optimizer]
     else:
-        trainable_params = vla_params + action_head_params + proprio_params
+        head_opt_params = head_master_params if head_master_params is not None else action_head_params
+        trainable_params = vla_params + head_opt_params + proprio_params
         optimizer = AdamW(trainable_params, lr=cfg.learning_rate)
         optimizers = [optimizer]
 
@@ -575,9 +584,17 @@ def finetune(cfg):
                 if (batch_idx + 1) % cfg.grad_accumulation_steps == 0:
                     all_params = vla_params + action_head_params + proprio_params
                     torch.nn.utils.clip_grad_norm_(all_params, max_norm=1.0)
+                    if head_master_params is not None:
+                        for m, p in zip(head_master_params, action_head_params):
+                            m.grad = None if p.grad is None else p.grad.float()
 
                     for opt in optimizers:
                         opt.step()
+                    if head_master_params is not None:
+                        with torch.no_grad():
+                            for m, p in zip(head_master_params, action_head_params):
+                                p.copy_(m)
+                                p.grad = None  # not in the optimizer, so zero_grad() below would skip it
                     scheduler.step()
                     for opt in optimizers:
                         opt.zero_grad()

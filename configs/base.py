@@ -56,6 +56,8 @@ class OptimizerConfig:
     learning_rate: float = 2e-4
     lr_warmup_steps: int = 0
     num_steps_before_decay: int = 200000
+    # Keep an fp32 master copy of the (bf16) action head for AdamW; the head still runs in bf16.
+    head_fp32_master: bool = False
     use_muon: bool = False
     muon_lr: float = 2e-2
     muon_momentum: float = 0.95

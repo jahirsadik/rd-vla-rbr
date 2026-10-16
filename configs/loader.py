@@ -207,6 +207,7 @@ def _convert_train_config(cfg: TrainConfig):
     legacy.learning_rate = cfg.optimizer.learning_rate
     legacy.lr_warmup_steps = cfg.optimizer.lr_warmup_steps
     legacy.num_steps_before_decay = cfg.optimizer.num_steps_before_decay
+    legacy.head_fp32_master = cfg.optimizer.head_fp32_master
     legacy.grad_accumulation_steps = cfg.grad_accumulation_steps
     legacy.max_steps = cfg.max_steps
     legacy.use_val_set = cfg.use_val_set
