@@ -104,7 +104,8 @@ def count_parameters(module, name):
     print(f"# trainable params in {name}: {num_params}")
 
 
-def init_module(module_class, module_name, cfg, device_id, module_args, to_bf16=False, find_unused_params=False):
+def init_module(module_class, module_name, cfg, device_id, module_args, to_bf16=False, find_unused_params=False,
+                trainable_prefixes=None):
     module = module_class(**module_args)
     count_parameters(module, module_name)
 
@@ -112,6 +113,12 @@ def init_module(module_class, module_name, cfg, device_id, module_args, to_bf16=
         state_dict = load_checkpoint(module_name, cfg.resum_vla_path, cfg.resume_step)
         module.load_state_dict(state_dict)
         print('Loaded checkpoint!')
+
+    # Freeze before DDP wrapping: DDP only registers parameters that require grad at construction.
+    if trainable_prefixes is not None:
+        for name, param in module.named_parameters():
+            param.requires_grad = name.startswith(tuple(trainable_prefixes))
+        count_parameters(module, f"{module_name} (after freezing all but {list(trainable_prefixes)})")
 
     if to_bf16:
         module = module.to(torch.bfloat16)
@@ -433,10 +440,13 @@ def finetune(cfg):
             rms_norm_eps=rec_cfg.rms_norm_eps,
             rope_base=rec_cfg.rope_base,
         )
+        head_trainable = getattr(cfg, "head_trainable", "all")
+        assert head_trainable in ("all", "readout"), f"unknown head_trainable: {head_trainable}"
         action_head = init_module(
             ActionHeadRecurrent, "action_head", cfg, device_id,
             {"hidden_dim": llm_dim, "cfg": internal_cfg},
             to_bf16=True,
+            trainable_prefixes=("model.output_proj.",) if head_trainable == "readout" else None,
         )
 
     if action_head is None:

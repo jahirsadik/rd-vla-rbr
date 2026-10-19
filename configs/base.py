@@ -58,6 +58,8 @@ class OptimizerConfig:
     num_steps_before_decay: int = 200000
     # Keep an fp32 master copy of the (bf16) action head for AdamW; the head still runs in bf16.
     head_fp32_master: bool = False
+    # "all": train the whole action head; "readout": freeze it at its init except output_proj.
+    head_trainable: str = "all"
     use_muon: bool = False
     muon_lr: float = 2e-2
     muon_momentum: float = 0.95
